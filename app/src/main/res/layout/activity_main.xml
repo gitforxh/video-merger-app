@@ -20,7 +20,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="Pick multiple videos, reorder them, then export one combined MP4."
+            android:text="Pick multiple videos, drag to reorder them, then export one combined MP4."
             android:textAppearance="@style/TextAppearance.Material3.BodyMedium" />
 
         <com.google.android.material.button.MaterialButton
@@ -35,68 +35,14 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
-            android:text="Select videos first, then reorder them before merging." />
+            android:text="Select videos first, then drag cards to reorder them." />
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:orientation="horizontal">
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/previousButton"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Previous" />
-
-            <Space
-                android:layout_width="8dp"
-                android:layout_height="wrap_content" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/nextButton"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Next" />
-
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:orientation="horizontal">
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/moveUpButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Move up" />
-
-            <Space
-                android:layout_width="8dp"
-                android:layout_height="wrap_content" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/moveDownButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Move down" />
-
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/videoListContainer"
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/videoRecyclerView"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:orientation="vertical" />
+            android:nestedScrollingEnabled="false" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/mergeButton"
