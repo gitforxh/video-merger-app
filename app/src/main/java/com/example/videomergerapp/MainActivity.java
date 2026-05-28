@@ -3,6 +3,7 @@ package com.example.videomergerapp;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.content.Context;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Intent;
@@ -87,6 +88,7 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
         createNotificationChannel();
+        clearExportNotification();
 
         setupRecyclerView();
 
@@ -375,6 +377,14 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        clearExportNotification();
+    }
+
+    private void clearExportNotification() {
+        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager != null) {
+            manager.cancel(NOTIFICATION_ID);
+        }
     }
 
     @Override
