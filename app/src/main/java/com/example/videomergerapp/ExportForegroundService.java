@@ -5,119 +5,39 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
-import android.content.ContentResolver;
-import android.content.ContentValues;
-import android.content.Context;
 import android.content.Intent;
-import android.net.Uri;
 import android.os.Build;
-import android.os.Environment;
 import android.os.IBinder;
-import android.provider.MediaStore;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
-import androidx.media3.common.MediaItem;
-import androidx.media3.common.MimeTypes;
-import androidx.media3.transformer.Composition;
-import androidx.media3.transformer.EditedMediaItem;
-import androidx.media3.transformer.EditedMediaItemSequence;
-import androidx.media3.transformer.ExportException;
-import androidx.media3.transformer.ExportResult;
-import androidx.media3.transformer.Transformer;
 
-import java.io.File;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.Locale;
+public class ExportForegroundService extends Service implements ExportCoordinator.Listener {
 
-public class ExportForegroundService extends Service {
-
-    public static final String ACTION_START_EXPORT = "com.example.videomergerapp.action.START_EXPORT";
-    public static final String EXTRA_VIDEO_URIS = "extra_video_uris";
+    public static final String ACTION_START_FOREGROUND = "com.example.videomergerapp.action.START_FOREGROUND";
+    public static final String ACTION_STOP_FOREGROUND = "com.example.videomergerapp.action.STOP_FOREGROUND";
     private static final String CHANNEL_ID = "export_channel";
     private static final int NOTIFICATION_ID = 1001;
-
-    private Transformer transformer;
-
-    public static Intent createStartIntent(Context context, ArrayList<String> uris) {
-        Intent intent = new Intent(context, ExportForegroundService.class);
-        intent.setAction(ACTION_START_EXPORT);
-        intent.putStringArrayListExtra(EXTRA_VIDEO_URIS, uris);
-        return intent;
-    }
 
     @Override
     public void onCreate() {
         super.onCreate();
         createNotificationChannel();
+        ExportCoordinator.getInstance().addListener(this, this);
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent == null || !ACTION_START_EXPORT.equals(intent.getAction())) {
+        String action = intent != null ? intent.getAction() : null;
+        if (ACTION_STOP_FOREGROUND.equals(action)) {
+            stopForeground(STOP_FOREGROUND_REMOVE);
             stopSelf();
             return START_NOT_STICKY;
         }
 
-        ArrayList<String> uriStrings = intent.getStringArrayListExtra(EXTRA_VIDEO_URIS);
-        if (uriStrings == null || uriStrings.isEmpty()) {
-            stopSelf();
-            return START_NOT_STICKY;
-        }
-
-        startForeground(NOTIFICATION_ID, buildNotification("Preparing export...", true));
-        startExport(uriStrings);
-        return START_NOT_STICKY;
-    }
-
-    private void startExport(ArrayList<String> uriStrings) {
-        try {
-            Uri outputUri = createOutputMediaStoreUri();
-            if (outputUri == null) {
-                showFinishedNotification("Export failed: could not create output file");
-                stopSelf();
-                return;
-            }
-
-            File exportFile = prepareTempFile();
-            ArrayList<EditedMediaItem> editedItems = new ArrayList<>();
-            for (String uriString : uriStrings) {
-                MediaItem mediaItem = MediaItem.fromUri(Uri.parse(uriString));
-                editedItems.add(new EditedMediaItem.Builder(mediaItem).build());
-            }
-
-            Composition composition = new Composition.Builder(new EditedMediaItemSequence(editedItems)).build();
-            transformer = new Transformer.Builder(this)
-                    .addListener(new Transformer.Listener() {
-                        @Override
-                        public void onCompleted(Composition composition, ExportResult exportResult) {
-                            try {
-                                copyToGallery(exportFile, outputUri);
-                                showFinishedNotification("Merge complete. Saved to gallery.");
-                            } catch (Exception e) {
-                                showFinishedNotification("Merged, but saving failed: " + e.getMessage());
-                            }
-                            stopSelf();
-                        }
-
-                        @Override
-                        public void onError(Composition composition, ExportResult exportResult, ExportException exportException) {
-                            showFinishedNotification("Export failed: " + exportException.getMessage());
-                            stopSelf();
-                        }
-                    })
-                    .build();
-
-            updateNotification("Merging videos...");
-            transformer.start(composition, exportFile.getAbsolutePath());
-        } catch (Exception e) {
-            showFinishedNotification("Export failed: " + e.getMessage());
-            stopSelf();
-        }
+        startForeground(NOTIFICATION_ID, buildNotification("Export running in background...", true));
+        ExportCoordinator.getInstance().setBackgroundMode(this, true);
+        return START_STICKY;
     }
 
     private Notification buildNotification(String text, boolean ongoing) {
@@ -140,16 +60,6 @@ public class ExportForegroundService extends Service {
                 .build();
     }
 
-    private void updateNotification(String text) {
-        NotificationManager manager = getSystemService(NotificationManager.class);
-        manager.notify(NOTIFICATION_ID, buildNotification(text, true));
-    }
-
-    private void showFinishedNotification(String text) {
-        NotificationManager manager = getSystemService(NotificationManager.class);
-        manager.notify(NOTIFICATION_ID, buildNotification(text, false));
-    }
-
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "Export notifications", NotificationManager.IMPORTANCE_LOW);
@@ -159,54 +69,24 @@ public class ExportForegroundService extends Service {
         }
     }
 
-    private Uri createOutputMediaStoreUri() {
-        ContentValues values = new ContentValues();
-        String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
-        values.put(MediaStore.Video.Media.DISPLAY_NAME, "merged_" + timeStamp + ".mp4");
-        values.put(MediaStore.Video.Media.MIME_TYPE, MimeTypes.VIDEO_MP4);
-        values.put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/VideoMergerApp");
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            values.put(MediaStore.Video.Media.IS_PENDING, 1);
+    @Override
+    public void onStateChanged(String status, int progress, boolean active, boolean background) {
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (!active) {
+            manager.notify(NOTIFICATION_ID, buildNotification(status, false));
+            stopForeground(STOP_FOREGROUND_DETACH);
+            stopSelf();
+            return;
         }
-        return getContentResolver().insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values);
-    }
-
-    private File prepareTempFile() throws Exception {
-        File tempFile = new File(getCacheDir(), "pending_merge_output.mp4");
-        if (tempFile.exists() && !tempFile.delete()) {
-            throw new IllegalStateException("Could not reset temp file");
-        }
-        return tempFile;
-    }
-
-    private void copyToGallery(File exportFile, Uri outputUri) throws Exception {
-        ContentResolver resolver = getContentResolver();
-        try (InputStream inputStream = java.nio.file.Files.newInputStream(exportFile.toPath());
-             OutputStream outputStream = resolver.openOutputStream(outputUri, "w")) {
-            if (outputStream == null) {
-                throw new IllegalStateException("Could not open output stream");
-            }
-            byte[] buffer = new byte[8192];
-            int bytesRead;
-            while ((bytesRead = inputStream.read(buffer)) != -1) {
-                outputStream.write(buffer, 0, bytesRead);
-            }
-            outputStream.flush();
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ContentValues values = new ContentValues();
-            values.put(MediaStore.Video.Media.IS_PENDING, 0);
-            resolver.update(outputUri, values, null, null);
+        if (background) {
+            manager.notify(NOTIFICATION_ID, buildNotification(status + " " + progress + "%", true));
         }
     }
 
     @Override
     public void onDestroy() {
+        ExportCoordinator.getInstance().removeListener(this);
         super.onDestroy();
-        if (transformer != null) {
-            transformer.cancel();
-        }
     }
 
     @Nullable

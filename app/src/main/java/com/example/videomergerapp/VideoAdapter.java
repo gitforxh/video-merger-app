@@ -18,7 +18,6 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.card.MaterialCardView;
 
-import java.util.Collections;
 import java.util.List;
 
 public class VideoAdapter extends RecyclerView.Adapter<VideoAdapter.VideoViewHolder> {
@@ -54,15 +53,20 @@ public class VideoAdapter extends RecyclerView.Adapter<VideoAdapter.VideoViewHol
         if (fromPosition == toPosition) {
             return;
         }
-        Collections.swap(items, fromPosition, toPosition);
+
+        VideoItem moved = items.remove(fromPosition);
+        items.add(toPosition, moved);
+
         if (selectedIndex == fromPosition) {
             selectedIndex = toPosition;
-        } else if (selectedIndex == toPosition) {
-            selectedIndex = fromPosition;
+        } else if (fromPosition < toPosition && selectedIndex > fromPosition && selectedIndex <= toPosition) {
+            selectedIndex--;
+        } else if (fromPosition > toPosition && selectedIndex >= toPosition && selectedIndex < fromPosition) {
+            selectedIndex++;
         }
+
         notifyItemMoved(fromPosition, toPosition);
-        notifyItemChanged(fromPosition);
-        notifyItemChanged(toPosition);
+        notifyItemRangeChanged(Math.min(fromPosition, toPosition), Math.abs(fromPosition - toPosition) + 1);
     }
 
     @NonNull

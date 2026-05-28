@@ -15,13 +15,14 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.videomergerapp.databinding.ActivityMainBinding;
 
 import java.util.ArrayList;
 import java.util.List;
 
-public class MainActivity extends AppCompatActivity implements VideoAdapter.DragStartListener {
+public class MainActivity extends AppCompatActivity implements VideoAdapter.DragStartListener, ExportCoordinator.Listener {
 
     private ActivityMainBinding binding;
     private final List<VideoItem> selectedVideos = new ArrayList<>();
@@ -29,6 +30,7 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
     private VideoAdapter videoAdapter;
     private ItemTouchHelper itemTouchHelper;
     private int selectedIndex = -1;
+    private boolean isVisible;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -63,26 +65,52 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
                         .build()
         ));
 
-        binding.mergeButton.setOnClickListener(v -> mergeVideosInBackground());
+        binding.mergeButton.setOnClickListener(v -> startExport());
+        restoreSavedExportState();
         updateSelectionUi();
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        isVisible = true;
+        ExportCoordinator.getInstance().addListener(this, this);
+        stopService(new Intent(this, ExportForegroundService.class).setAction(ExportForegroundService.ACTION_STOP_FOREGROUND));
+        ExportCoordinator.getInstance().setBackgroundMode(this, false);
+    }
+
+    @Override
+    protected void onStop() {
+        isVisible = false;
+        ExportCoordinator.getInstance().removeListener(this);
+        if (ExportCoordinator.getInstance().isActive()) {
+            ContextCompat.startForegroundService(this, new Intent(this, ExportForegroundService.class).setAction(ExportForegroundService.ACTION_START_FOREGROUND));
+        }
+        super.onStop();
     }
 
     private void setupRecyclerView() {
         videoAdapter = new VideoAdapter(this, selectedVideos, this);
-        binding.videoRecyclerView.setLayoutManager(new LinearLayoutManager(this));
+        LinearLayoutManager layoutManager = new LinearLayoutManager(this);
+        binding.videoRecyclerView.setLayoutManager(layoutManager);
         binding.videoRecyclerView.setAdapter(videoAdapter);
+        binding.videoRecyclerView.setItemAnimator(null);
         itemTouchHelper = new ItemTouchHelper(new DragManageAdapter(videoAdapter));
         itemTouchHelper.attachToRecyclerView(binding.videoRecyclerView);
+        binding.videoRecyclerView.addOnItemTouchListener(new RecyclerView.SimpleOnItemTouchListener() {});
     }
 
     private void updateSelectionUi() {
         boolean hasItems = !selectedVideos.isEmpty();
-        binding.mergeButton.setEnabled(hasItems);
+        binding.mergeButton.setEnabled(hasItems && !ExportCoordinator.getInstance().isActive());
 
         if (!hasItems) {
             binding.selectionHintText.setText("Select videos first, then drag cards to reorder them.");
-            binding.statusText.setText("Idle");
-            binding.progressBar.setProgress(0);
+            if (!ExportCoordinator.getInstance().isActive()) {
+                binding.statusText.setText("Idle");
+                binding.progressBar.setIndeterminate(false);
+                binding.progressBar.setProgress(0);
+            }
             return;
         }
 
@@ -92,6 +120,13 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
         }
 
         binding.selectionHintText.setText("Drag the ≡ handle to reorder. Selected item: " + (selectedIndex + 1) + " of " + selectedVideos.size());
+    }
+
+    private void restoreSavedExportState() {
+        ExportStateStore.ExportState state = ExportStateStore.load(this);
+        binding.statusText.setText(state.status);
+        binding.progressBar.setIndeterminate(state.active && state.progress <= 0);
+        binding.progressBar.setProgress(state.progress);
     }
 
     private String getDisplayName(Uri uri) {
@@ -116,26 +151,42 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
         return lastSegment;
     }
 
-    private void mergeVideosInBackground() {
+    private void startExport() {
         if (selectedVideos.isEmpty()) {
             Toast.makeText(this, "Pick at least one video first.", Toast.LENGTH_SHORT).show();
             return;
         }
-
-        ArrayList<String> uriStrings = new ArrayList<>();
-        for (VideoItem item : selectedVideos) {
-            uriStrings.add(item.uri.toString());
+        if (ExportCoordinator.getInstance().isActive()) {
+            Toast.makeText(this, "An export is already running.", Toast.LENGTH_SHORT).show();
+            return;
         }
 
-        Intent serviceIntent = ExportForegroundService.createStartIntent(this, uriStrings);
-        ContextCompat.startForegroundService(this, serviceIntent);
-        binding.statusText.setText("Export started in background. Check notifications.");
-        binding.progressBar.setIndeterminate(true);
-        Toast.makeText(this, "Background export started", Toast.LENGTH_SHORT).show();
+        binding.statusText.setText("Preparing export...");
+        binding.progressBar.setIndeterminate(false);
+        binding.progressBar.setProgress(5);
+        ExportCoordinator.getInstance().startExport(this, new ArrayList<>(selectedVideos));
     }
 
     @Override
-    public void onStartDrag(@NonNull androidx.recyclerview.widget.RecyclerView.ViewHolder viewHolder) {
+    public void onStartDrag(@NonNull RecyclerView.ViewHolder viewHolder) {
         itemTouchHelper.startDrag(viewHolder);
+    }
+
+    @Override
+    public void onStateChanged(String status, int progress, boolean active, boolean background) {
+        runOnUiThread(() -> {
+            binding.statusText.setText(background ? status + " (running in background)" : status);
+            binding.progressBar.setIndeterminate(active && progress <= 0);
+            if (progress > 0) {
+                binding.progressBar.setIndeterminate(false);
+                binding.progressBar.setProgress(progress);
+            } else if (!active) {
+                binding.progressBar.setIndeterminate(false);
+                if ("Idle".equals(status)) {
+                    binding.progressBar.setProgress(0);
+                }
+            }
+            binding.mergeButton.setEnabled(!active && !selectedVideos.isEmpty());
+        });
     }
 }
