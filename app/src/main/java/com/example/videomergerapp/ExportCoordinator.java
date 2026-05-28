@@ -29,6 +29,8 @@ import java.util.Locale;
 
 public class ExportCoordinator {
 
+    private static Context appContext;
+
     public interface Listener {
         void onStateChanged(String status, int progress, boolean active, boolean background);
     }
@@ -40,6 +42,18 @@ public class ExportCoordinator {
             instance = new ExportCoordinator();
         }
         return instance;
+    }
+
+    public static synchronized void initialize(@NonNull Context context) {
+        appContext = context.getApplicationContext();
+        if (instance == null) {
+            instance = new ExportCoordinator();
+        }
+        ExportStateStore.ExportState state = ExportStateStore.load(appContext);
+        instance.status = state.status;
+        instance.progress = state.progress;
+        instance.active = state.active;
+        instance.background = state.background;
     }
 
     private final List<Listener> listeners = new ArrayList<>();
@@ -69,6 +83,7 @@ public class ExportCoordinator {
     }
 
     public synchronized void startExport(Context context, List<VideoItem> items) {
+        initialize(context);
         if (active) {
             return;
         }
@@ -126,6 +141,9 @@ public class ExportCoordinator {
         background = false;
         status = "Idle";
         progress = 0;
+        if (appContext != null) {
+            ExportStateStore.save(appContext, status, progress, active, background);
+        }
     }
 
     private synchronized void update(Context context, String status, int progress) {

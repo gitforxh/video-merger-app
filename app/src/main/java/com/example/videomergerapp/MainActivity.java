@@ -38,6 +38,7 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
 
+        ExportCoordinator.initialize(getApplicationContext());
         setupRecyclerView();
 
         pickMultipleVideosLauncher = registerForActivityResult(
@@ -74,9 +75,13 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
     protected void onStart() {
         super.onStart();
         isVisible = true;
+        ExportCoordinator.initialize(getApplicationContext());
         ExportCoordinator.getInstance().addListener(this, this);
         stopService(new Intent(this, ExportForegroundService.class).setAction(ExportForegroundService.ACTION_STOP_FOREGROUND));
-        ExportCoordinator.getInstance().setBackgroundMode(this, false);
+        if (ExportCoordinator.getInstance().isActive()) {
+            ExportCoordinator.getInstance().setBackgroundMode(this, false);
+        }
+        restoreSavedExportState();
     }
 
     @Override
@@ -124,9 +129,10 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
 
     private void restoreSavedExportState() {
         ExportStateStore.ExportState state = ExportStateStore.load(this);
-        binding.statusText.setText(state.status);
+        binding.statusText.setText(state.background ? state.status + " (running in background)" : state.status);
         binding.progressBar.setIndeterminate(state.active && state.progress <= 0);
         binding.progressBar.setProgress(state.progress);
+        binding.mergeButton.setEnabled(!state.active && !selectedVideos.isEmpty());
     }
 
     private String getDisplayName(Uri uri) {

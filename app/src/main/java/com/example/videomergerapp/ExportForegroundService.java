@@ -22,6 +22,7 @@ public class ExportForegroundService extends Service implements ExportCoordinato
     @Override
     public void onCreate() {
         super.onCreate();
+        ExportCoordinator.initialize(getApplicationContext());
         createNotificationChannel();
         ExportCoordinator.getInstance().addListener(this, this);
     }
@@ -36,8 +37,13 @@ public class ExportForegroundService extends Service implements ExportCoordinato
         }
 
         startForeground(NOTIFICATION_ID, buildNotification("Export running in background...", true));
-        ExportCoordinator.getInstance().setBackgroundMode(this, true);
-        return START_STICKY;
+        if (ExportCoordinator.getInstance().isActive()) {
+            ExportCoordinator.getInstance().setBackgroundMode(this, true);
+            return START_STICKY;
+        }
+        stopForeground(STOP_FOREGROUND_REMOVE);
+        stopSelf();
+        return START_NOT_STICKY;
     }
 
     private Notification buildNotification(String text, boolean ongoing) {
