@@ -68,5 +68,13 @@
             android:max="100"
             android:progress="0" />
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/openMergedFileButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Open merged file"
+            android:visibility="gone" />
+
     </LinearLayout>
 </ScrollView>

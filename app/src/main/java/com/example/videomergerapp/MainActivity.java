@@ -59,6 +59,7 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
     private Transformer transformer;
     private boolean exportRunning;
     private int selectedIndex = -1;
+    private Uri lastMergedOutputUri;
     private final android.os.Handler progressHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     private final ProgressHolder progressHolder = new ProgressHolder();
 
@@ -115,6 +116,7 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
         ));
 
         binding.mergeButton.setOnClickListener(v -> startExport());
+        binding.openMergedFileButton.setOnClickListener(v -> openMergedFile());
         setIdleUi();
         updateSelectionUi();
     }
@@ -153,6 +155,7 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
         binding.statusText.setText("Idle");
         binding.progressBar.setIndeterminate(false);
         binding.progressBar.setProgress(0);
+        binding.openMergedFileButton.setVisibility(lastMergedOutputUri != null ? android.view.View.VISIBLE : android.view.View.GONE);
     }
 
     private String getDisplayName(Uri uri) {
@@ -210,10 +213,12 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
                                 try {
                                     copyToGallery(exportFile, outputUri);
                                     exportRunning = false;
+                                    lastMergedOutputUri = outputUri;
                                     binding.statusText.setText("Merge complete. Saved to gallery.");
                                     binding.progressBar.setIndeterminate(false);
                                     binding.progressBar.setProgress(100);
                                     binding.mergeButton.setEnabled(!selectedVideos.isEmpty());
+                                    binding.openMergedFileButton.setVisibility(android.view.View.VISIBLE);
                                     updateNotification("Merge complete. Saved to gallery.", 100, false);
                                     Toast.makeText(MainActivity.this, "Merge complete", Toast.LENGTH_LONG).show();
                                 } catch (Exception e) {
@@ -244,6 +249,8 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
                     .build();
 
             exportRunning = true;
+            lastMergedOutputUri = null;
+            binding.openMergedFileButton.setVisibility(android.view.View.GONE);
             binding.statusText.setText("Merging videos... 0%");
             binding.progressBar.setIndeterminate(false);
             binding.progressBar.setProgress(0);
@@ -298,6 +305,23 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
         }
 
         manager.notify(NOTIFICATION_ID, builder.build());
+    }
+
+    private void openMergedFile() {
+        if (lastMergedOutputUri == null) {
+            Toast.makeText(this, "No merged file available yet.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        Intent intent = new Intent(Intent.ACTION_VIEW);
+        intent.setDataAndType(lastMergedOutputUri, "video/mp4");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+        try {
+            startActivity(intent);
+        } catch (Exception e) {
+            Toast.makeText(this, "Could not open merged file.", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private Uri createOutputMediaStoreUri() {
