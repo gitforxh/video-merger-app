@@ -61,6 +61,7 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
     private boolean exportRunning;
     private int selectedIndex = -1;
     private Uri lastMergedOutputUri;
+    private String lastMergedOutputPath;
     private final android.os.Handler progressHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     private final ProgressHolder progressHolder = new ProgressHolder();
 
@@ -157,7 +158,10 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
         binding.statusText.setText("Idle");
         binding.progressBar.setIndeterminate(false);
         binding.progressBar.setProgress(0);
-        binding.openMergedFileButton.setVisibility(lastMergedOutputUri != null ? android.view.View.VISIBLE : android.view.View.GONE);
+        boolean hasMergedFile = lastMergedOutputUri != null;
+        binding.openMergedFileButton.setVisibility(hasMergedFile ? android.view.View.VISIBLE : android.view.View.GONE);
+        binding.mergedFilePathText.setVisibility(hasMergedFile ? android.view.View.VISIBLE : android.view.View.GONE);
+        binding.mergedFilePathText.setText(hasMergedFile ? lastMergedOutputPath : "");
     }
 
     private String getDisplayName(Uri uri) {
@@ -216,10 +220,13 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
                                     copyToGallery(exportFile, outputUri);
                                     exportRunning = false;
                                     lastMergedOutputUri = outputUri;
+                                    lastMergedOutputPath = buildMergedFilePath(outputUri);
                                     binding.statusText.setText("Merge complete. Saved to gallery.");
                                     binding.progressBar.setIndeterminate(false);
                                     binding.progressBar.setProgress(100);
                                     binding.mergeButton.setEnabled(!selectedVideos.isEmpty());
+                                    binding.mergedFilePathText.setText(lastMergedOutputPath);
+                                    binding.mergedFilePathText.setVisibility(android.view.View.VISIBLE);
                                     binding.openMergedFileButton.setVisibility(android.view.View.VISIBLE);
                                     updateNotification("Merge complete. Saved to gallery.", 100, false);
                                     Toast.makeText(MainActivity.this, "Merge complete", Toast.LENGTH_LONG).show();
@@ -252,6 +259,9 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
 
             exportRunning = true;
             lastMergedOutputUri = null;
+            lastMergedOutputPath = null;
+            binding.mergedFilePathText.setText("");
+            binding.mergedFilePathText.setVisibility(android.view.View.GONE);
             binding.openMergedFileButton.setVisibility(android.view.View.GONE);
             binding.statusText.setText("Merging videos... 0%");
             binding.progressBar.setIndeterminate(false);
@@ -307,6 +317,35 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
         }
 
         manager.notify(NOTIFICATION_ID, builder.build());
+    }
+
+    private String buildMergedFilePath(Uri uri) {
+        String[] projection = {
+                MediaStore.Video.Media.RELATIVE_PATH,
+                MediaStore.Video.Media.DISPLAY_NAME,
+                MediaStore.Video.Media.DATA
+        };
+        try (Cursor cursor = getContentResolver().query(uri, projection, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                int relativePathIndex = cursor.getColumnIndex(MediaStore.Video.Media.RELATIVE_PATH);
+                int displayNameIndex = cursor.getColumnIndex(MediaStore.Video.Media.DISPLAY_NAME);
+                String relativePath = relativePathIndex >= 0 ? cursor.getString(relativePathIndex) : null;
+                String displayName = displayNameIndex >= 0 ? cursor.getString(displayNameIndex) : null;
+                if (relativePath != null && displayName != null) {
+                    return Environment.getExternalStorageDirectory().getPath() + "/" + relativePath + displayName;
+                }
+
+                int dataIndex = cursor.getColumnIndex(MediaStore.Video.Media.DATA);
+                if (dataIndex >= 0) {
+                    String dataPath = cursor.getString(dataIndex);
+                    if (dataPath != null && !dataPath.isBlank()) {
+                        return dataPath;
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return uri.toString();
     }
 
     private void openMergedFile() {
