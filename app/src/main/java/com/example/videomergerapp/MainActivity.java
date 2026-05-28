@@ -34,6 +34,11 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        ExportStateStore.ExportState initialState = ExportStateStore.load(this);
+        if (initialState.active && initialState.sessionId == null) {
+            ExportStateStore.clear(this);
+        }
+
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
 
@@ -110,9 +115,15 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
 
     private void restoreSavedExportState() {
         ExportStateStore.ExportState state = ExportStateStore.load(this);
-        binding.statusText.setText(state.background ? state.status + " (running in background)" : state.status);
-        binding.progressBar.setIndeterminate(state.active && state.progress <= 0);
-        binding.progressBar.setProgress(state.progress);
+        if (!state.active && (state.status == null || state.status.equals("Merging videos...") || state.status.equals("Preparing export..."))) {
+            binding.statusText.setText("Idle");
+            binding.progressBar.setIndeterminate(false);
+            binding.progressBar.setProgress(0);
+        } else {
+            binding.statusText.setText(state.background ? state.status + " (running in background)" : state.status);
+            binding.progressBar.setIndeterminate(state.active && state.progress <= 0);
+            binding.progressBar.setProgress(state.progress);
+        }
         binding.mergeButton.setEnabled(!state.active && !selectedVideos.isEmpty());
     }
 

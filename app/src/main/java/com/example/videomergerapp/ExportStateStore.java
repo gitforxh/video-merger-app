@@ -29,13 +29,23 @@ public class ExportStateStore {
 
     public static ExportState load(Context context) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        return new ExportState(
-                prefs.getString(KEY_STATUS, "Idle"),
-                prefs.getInt(KEY_PROGRESS, 0),
-                prefs.getBoolean(KEY_ACTIVE, false),
-                prefs.getBoolean(KEY_BACKGROUND, false),
-                prefs.getString(KEY_SESSION_ID, null)
-        );
+        String status = prefs.getString(KEY_STATUS, "Idle");
+        int progress = prefs.getInt(KEY_PROGRESS, 0);
+        boolean active = prefs.getBoolean(KEY_ACTIVE, false);
+        boolean background = prefs.getBoolean(KEY_BACKGROUND, false);
+        String sessionId = prefs.getString(KEY_SESSION_ID, null);
+
+        if (active && sessionId == null) {
+            clear(context);
+            return new ExportState("Idle", 0, false, false, null);
+        }
+
+        return new ExportState(status, progress, active, background, sessionId);
+    }
+
+    public static void clear(Context context) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        prefs.edit().clear().apply();
     }
 
     public static class ExportState {
