@@ -1,10 +1,12 @@
 package com.example.videomergerapp;
 
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.ContentResolver;
 import android.content.ContentValues;
+import android.content.Intent;
 import android.database.Cursor;
-import android.graphics.Bitmap;
-import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -18,6 +20,7 @@ import androidx.activity.result.PickVisualMediaRequest;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.NotificationCompat;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.MimeTypes;
 import androidx.media3.transformer.Composition;
@@ -25,6 +28,7 @@ import androidx.media3.transformer.EditedMediaItem;
 import androidx.media3.transformer.EditedMediaItemSequence;
 import androidx.media3.transformer.ExportException;
 import androidx.media3.transformer.ExportResult;
+import androidx.media3.transformer.ProgressHolder;
 import androidx.media3.transformer.Transformer;
 import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -43,6 +47,9 @@ import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity implements VideoAdapter.DragStartListener {
 
+    private static final String CHANNEL_ID = "export_channel";
+    private static final int NOTIFICATION_ID = 1001;
+
     private ActivityMainBinding binding;
     private final List<VideoItem> selectedVideos = new ArrayList<>();
     private ActivityResultLauncher<PickVisualMediaRequest> pickMultipleVideosLauncher;
@@ -51,12 +58,33 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
     private Transformer transformer;
     private boolean exportRunning;
     private int selectedIndex = -1;
+    private final android.os.Handler progressHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final ProgressHolder progressHolder = new ProgressHolder();
+
+    private final Runnable progressUpdater = new Runnable() {
+        @Override
+        public void run() {
+            if (!exportRunning || transformer == null) {
+                return;
+            }
+            int progressState = transformer.getProgress(progressHolder);
+            if (progressState != Transformer.PROGRESS_STATE_NOT_STARTED && progressState != Transformer.PROGRESS_STATE_UNAVAILABLE) {
+                int progress = Math.max(0, Math.min(100, progressHolder.progress));
+                binding.progressBar.setIndeterminate(false);
+                binding.progressBar.setProgress(progress);
+                binding.statusText.setText("Merging videos... " + progress + "%");
+                updateNotification("Merging videos...", progress, true);
+            }
+            progressHandler.postDelayed(this, 500);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
+        createNotificationChannel();
 
         setupRecyclerView();
 
@@ -177,6 +205,7 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
                         @Override
                         public void onCompleted(Composition composition, ExportResult exportResult) {
                             runOnUiThread(() -> {
+                                progressHandler.removeCallbacks(progressUpdater);
                                 try {
                                     copyToGallery(exportFile, outputUri);
                                     exportRunning = false;
@@ -184,6 +213,7 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
                                     binding.progressBar.setIndeterminate(false);
                                     binding.progressBar.setProgress(100);
                                     binding.mergeButton.setEnabled(!selectedVideos.isEmpty());
+                                    updateNotification("Merge complete. Saved to gallery.", 100, false);
                                     Toast.makeText(MainActivity.this, "Merge complete", Toast.LENGTH_LONG).show();
                                 } catch (Exception e) {
                                     exportRunning = false;
@@ -191,6 +221,7 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
                                     binding.progressBar.setIndeterminate(false);
                                     binding.progressBar.setProgress(0);
                                     binding.mergeButton.setEnabled(!selectedVideos.isEmpty());
+                                    updateNotification("Merged, but saving failed", 0, false);
                                 }
                             });
                         }
@@ -198,11 +229,13 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
                         @Override
                         public void onError(Composition composition, ExportResult exportResult, ExportException exportException) {
                             runOnUiThread(() -> {
+                                progressHandler.removeCallbacks(progressUpdater);
                                 exportRunning = false;
                                 binding.statusText.setText("Export failed: " + exportException.getMessage());
                                 binding.progressBar.setIndeterminate(false);
                                 binding.progressBar.setProgress(0);
                                 binding.mergeButton.setEnabled(!selectedVideos.isEmpty());
+                                updateNotification("Export failed", 0, false);
                                 Toast.makeText(MainActivity.this, "Export failed", Toast.LENGTH_LONG).show();
                             });
                         }
@@ -210,17 +243,59 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
                     .build();
 
             exportRunning = true;
-            binding.statusText.setText("Merging videos...");
-            binding.progressBar.setIndeterminate(true);
+            binding.statusText.setText("Merging videos... 0%");
+            binding.progressBar.setIndeterminate(false);
+            binding.progressBar.setProgress(0);
             binding.mergeButton.setEnabled(false);
+            updateNotification("Merging videos...", 0, true);
             transformer.start(composition, exportFile.getAbsolutePath());
+            progressHandler.post(progressUpdater);
         } catch (Exception e) {
             exportRunning = false;
             binding.statusText.setText("Export failed: " + e.getMessage());
             binding.progressBar.setIndeterminate(false);
             binding.progressBar.setProgress(0);
             binding.mergeButton.setEnabled(!selectedVideos.isEmpty());
+            updateNotification("Export failed", 0, false);
         }
+    }
+
+    private void createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "Export notifications", NotificationManager.IMPORTANCE_LOW);
+            channel.setDescription("Video export progress and completion");
+            NotificationManager manager = getSystemService(NotificationManager.class);
+            manager.createNotificationChannel(channel);
+        }
+    }
+
+    private void updateNotification(String text, int progress, boolean ongoing) {
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        Intent openIntent = new Intent(this, MainActivity.class);
+        PendingIntent pendingIntent = PendingIntent.getActivity(
+                this,
+                0,
+                openIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setContentTitle("Video Merger")
+                .setContentText(progress > 0 && ongoing ? text + " " + progress + "%" : text)
+                .setContentIntent(pendingIntent)
+                .setOnlyAlertOnce(true)
+                .setOngoing(ongoing)
+                .setPriority(NotificationCompat.PRIORITY_LOW);
+
+        if (ongoing) {
+            builder.setProgress(100, progress, false);
+        } else {
+            builder.setProgress(0, 0, false);
+            builder.setAutoCancel(true);
+        }
+
+        manager.notify(NOTIFICATION_ID, builder.build());
     }
 
     private Uri createOutputMediaStoreUri() {
@@ -272,6 +347,7 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
 
     @Override
     protected void onDestroy() {
+        progressHandler.removeCallbacks(progressUpdater);
         if (isFinishing() && transformer != null) {
             transformer.cancel();
         }
