@@ -6,6 +6,7 @@ import android.app.PendingIntent;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
@@ -272,6 +273,7 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
     private void updateNotification(String text, int progress, boolean ongoing) {
         NotificationManager manager = getSystemService(NotificationManager.class);
         Intent openIntent = new Intent(this, MainActivity.class);
+        openIntent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         PendingIntent pendingIntent = PendingIntent.getActivity(
                 this,
                 0,
@@ -343,6 +345,12 @@ public class MainActivity extends AppCompatActivity implements VideoAdapter.Drag
     @Override
     public void onStartDrag(@NonNull RecyclerView.ViewHolder viewHolder) {
         itemTouchHelper.startDrag(viewHolder);
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
     }
 
     @Override
